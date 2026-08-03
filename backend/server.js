@@ -18,6 +18,7 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
+// CORS
 const corsOptions = {
   origin: process.env.CORS_ORIGIN || '*',
   credentials: true,
@@ -27,11 +28,15 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// Body parser
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Static uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+
+// Rate limit
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 500,
@@ -41,6 +46,8 @@ const generalLimiter = rateLimit({
 
 app.use('/api', generalLimiter);
 
+
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/orders', orderRoutes);
@@ -49,22 +56,27 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/admin', adminRoutes);
 
+
+// Health check
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'ZyvenorMC API is running',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    timestamp: new Date().toISOString()
   });
 });
 
-app.use((req, res, next) => {
+
+// 404 Handler
+app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: `Route not found - ${req.method} ${req.originalUrl}`
   });
 });
 
+
+// Error Handler
 app.use((err, req, res, next) => {
   console.error('Error:', err);
 
@@ -73,12 +85,14 @@ app.use((err, req, res, next) => {
       field: val.path,
       message: val.message
     }));
+
     return res.status(400).json({
       success: false,
       message: 'Validation error',
       errors
     });
   }
+
 
   if (err.name === 'CastError') {
     return res.status(400).json({
@@ -87,62 +101,57 @@ app.use((err, req, res, next) => {
     });
   }
 
+
   if (err.code === 11000) {
     const key = Object.keys(err.keyValue)[0];
+
     return res.status(400).json({
       success: false,
       message: `Duplicate value for ${key}`
     });
   }
 
-  if (err.message.includes('Only image files are allowed')) {
-    return res.status(400).json({
-      success: false,
-      message: err.message
-    });
-  }
-
-  if (err.message.includes('File too large')) {
-    return res.status(400).json({
-      success: false,
-      message: 'File size exceeds the 5MB limit'
-    });
-  }
 
   res.status(500).json({
     success: false,
     message: 'Internal server error',
-    error: process.env.NODE_ENV === 'production' ? undefined : err.message
+    error: process.env.NODE_ENV === 'production'
+      ? undefined
+      : err.message
   });
 });
 
-const PORT = process.env.PORT || 5000;
 
-const connectDB = async () => {
+// MongoDB Connection
+mongoose.set('strictQuery', false);
+
+let isConnected = false;
+
+async function connectDB() {
+  if (isConnected) return;
+
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
+    const conn = await mongoose.connect(process.env.MONGODB_URI);
 
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    isConnected = true;
+
+    console.log(
+      `MongoDB Connected: ${conn.connection.host}`
+    );
 
     await seedCheck();
 
-    app.listen(PORT, () => {
-      console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-      console.log(`API Health: http://localhost:${PORT}/api/health`);
-    });
   } catch (error) {
-    console.error(`Error connecting to MongoDB: ${error.message}`);
-    process.exit(1);
+    console.error(
+      `MongoDB Error: ${error.message}`
+    );
   }
-};
+}
 
-mongoose.set('strictQuery', false);
+
+// Connect database before requests
 connectDB();
 
-process.on('unhandledRejection', (err, promise) => {
-  console.error(`Unhandled Rejection: ${err.message}`);
-  process.exit(1);
-});
+
+// IMPORTANT FOR VERCEL
+module.exports = app;

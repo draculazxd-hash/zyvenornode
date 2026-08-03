@@ -3,7 +3,7 @@
     {
       "src": "backend",
       "runtime": "node",
-      "entrypoint": "index.js"
+      "entrypoint": "server.js"
     }
   ]
 }
